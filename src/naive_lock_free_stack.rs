@@ -25,7 +25,7 @@ impl<T> Stack<T> {
     }
 
     fn push(&self, value: T) {
-        let mut current_head = self.head.load(Ordering::Acquire);
+        let mut current_head = self.head.load(Ordering::Relaxed);
         let node = Box::new(Node::new(value));
         let new_head = Box::into_raw(node);
 
@@ -36,7 +36,7 @@ impl<T> Stack<T> {
                 current_head,
                 new_head, 
                 Ordering::AcqRel, 
-                Ordering::Acquire
+                Ordering::Relaxed
             ) {
                 Ok(_) => break,
                 Err(actual_head) => {
@@ -47,7 +47,7 @@ impl<T> Stack<T> {
     }
     
     fn pop(&self) -> Option<T> {
-        let mut current_head = self.head.load(Ordering::Acquire);
+        let mut current_head = self.head.load(Ordering::Relaxed);
 
         loop {
             if current_head.is_null() { return None; }
@@ -59,7 +59,7 @@ impl<T> Stack<T> {
                 current_head,
                 new_head, 
                 Ordering::AcqRel, 
-                Ordering::Acquire) {
+                Ordering::Relaxed) {
                 
                 Ok(_) => {
                     // Safety: as I'm writing this, rusts forces me to think about the safety of the unsafe operations,
