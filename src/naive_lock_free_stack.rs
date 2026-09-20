@@ -1,36 +1,46 @@
-use std::sync::atomic::{AtomicPtr, Ordering};
-struct Node<T> {
+use crate::{AtomicPtr, Ordering};
+use crate::UnsafeCell;
+
+pub struct Node<T> {
     value: T,
-    next: *mut Node<T>,
+    //next: *mut Node<T>,
+    next: UnsafeCell<*mut Node<T>>,
 }
 
 impl<T> Node<T> {
     fn new(value: T) -> Self {
         Self {
             value,
-            next: std::ptr::null_mut(),
+            //next: std::ptr::null_mut(),
+            next: UnsafeCell::new(std::ptr::null_mut()),
         }
     }
 }
 
-struct Stack<T> {
+pub struct Stack<T> {
     head: AtomicPtr<Node<T>>,
 }
 
 impl<T> Stack<T> {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             head: AtomicPtr::new(std::ptr::null_mut())
         }
     }
 
-    fn push(&self, value: T) {
+    pub fn push(&self, value: T) {
         let mut current_head = self.head.load(Ordering::Relaxed);
         let node = Box::new(Node::new(value));
         let new_head = Box::into_raw(node);
+        println!("push: allocated node at {:p}", new_head);
 
         loop {
-            unsafe { (*new_head).next  = current_head };
+            //unsafe { (*new_head).next  = current_head };
+            unsafe {
+                (*new_head).next.with_mut(|next_ptr| {
+                *next_ptr = current_head;
+                });
+            }
 
             match self.head.compare_exchange_weak(
                 current_head,
@@ -46,14 +56,17 @@ impl<T> Stack<T> {
         }
     }
     
-    fn pop(&self) -> Option<T> {
+    pub fn pop(&self) -> Option<T> {
         let mut current_head = self.head.load(Ordering::Relaxed);
 
         loop {
             if current_head.is_null() { return None; }
 
             // Safety: how do we know no other read is modifying this?
-            let new_head = unsafe { (*current_head).next };
+            //let new_head = unsafe { (*current_head).next };
+            let new_head = unsafe {
+                (*current_head).next.with(|next_ptr| *next_ptr)
+            };
 
             match self.head.compare_exchange_weak(
                 current_head,
@@ -65,6 +78,8 @@ impl<T> Stack<T> {
                     // Safety: as I'm writing this, rusts forces me to think about the safety of the unsafe operations,
                     // and the fact that I can't write a safety statement should be a red flag
                     let node = unsafe { Box::from_raw(current_head) };
+
+                    println!("pop:  freeing node at {:p}", node);
 
                     return Some(node.value); // our ptr gets dropped as the Box goes out of scope
                 },
@@ -82,10 +97,11 @@ unsafe impl<T: Send> Send for Stack<T> {}
 unsafe impl<T: Send> Sync for Stack<T> {}
 
 #[cfg(test)]
+#[cfg(not(loom))]
 mod tests {
     use super::*;
-    use std::thread;
-    use std::sync::Arc;
+    use crate::thread;
+    use crate::Arc;
 
     #[test]
     fn basic_multithreading() {
@@ -135,6 +151,39 @@ mod tests {
         stack.push(11);
         assert_eq!(stack.pop(), Some(11));
         assert_eq!(stack.pop(), None);
+    }
+}
+
+#[cfg(test)]
+#[cfg(loom)]
+mod loom_tests {
+    use super::*;
+    use crate::thread;
+    use crate::Arc;
+    use loom::model;
+
+    #[test]
+    fn aba_problem() {
+        model(|| {
+            let stack = Arc::new(Stack::<i32>::new());
+            let s2 = stack.clone();
+            stack.push(1);
+            stack.push(2);
+            stack.push(3);
+
+            let t1 = thread::spawn(move || {
+                stack.pop();
+            });
+
+            let t2 = thread::spawn(move || {
+                s2.pop();
+                s2.pop();
+                s2.push(4);
+            });
+
+            t1.join().unwrap();
+            t2.join().unwrap();
+        });
     }
 }
 

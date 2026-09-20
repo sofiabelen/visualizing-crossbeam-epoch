@@ -1,6 +1,6 @@
-use std::sync::atomic::{AtomicPtr, Ordering};
-use std::thread;
 use std::time::Duration;
+use crate::{AtomicPtr, Ordering};
+use crate::thread;
 
 struct Node<T> {
     value: T,
@@ -100,8 +100,7 @@ unsafe impl<T: Send> Sync for Stack<T> {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread;
-    use std::sync::Arc;
+    use crate::Arc;
 
     #[test]
     fn aba() {
