@@ -6,7 +6,7 @@ This is the home for the experiments used for demonstration purposes in my blog.
     - Visualizing lock-free concurrency in Rust: reproducing the aba problem to begin understanding crossbeam. I promise lots of diagrams!
 - [Using Loom to (Try To) Catch an ABA Bug in Lock-Free Rust](https://sofiabelen.github.io/projects/using-loom-to-catch-an-aba-bug/)
     - I'm exploring Loom for the first time! My goal test our broken lock-free stack with loom, to see if it can detect the ABA bug. It's my first time working with this tool, so I'm excited!
-- [Visualizing crossbeam Epoch Based Reclamation](https://sofiabelen.github.io/projects/visualizing-crossbeam-epoch-based-reclamation/)
+- [Visualizing crossbeam Epoch Based Reclamation](https://sofiabelen.github.io/projects/visualizing-crossbeam-epoch-based-reclamation/) (coming soon)
     - Continue the lock-free adventure by exploring the internals of crossbeam-epoch to answer two fundamental questions:
         1. How do we know when it's safe to drop?
         2. How do we atomically update both a pointer and a state flag in a single CAS instruction? This second question stems from the two-step process needed for deleting a node in a lock-free linked list.
