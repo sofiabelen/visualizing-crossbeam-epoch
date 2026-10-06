@@ -2,13 +2,13 @@ use std::time::Duration;
 use crate::{AtomicPtr, Ordering};
 use crate::thread;
 
-struct Node<T> {
+pub struct Node<T> {
     value: T,
     next: *mut Node<T>,
 }
 
 impl<T> Node<T> {
-    fn new(value: T) -> Self {
+    pub fn new(value: T) -> Self {
         Self {
             value,
             next: std::ptr::null_mut(),
@@ -16,21 +16,22 @@ impl<T> Node<T> {
     }
 }
 
-struct Stack<T> {
+pub struct Stack<T> {
     head: AtomicPtr<Node<T>>,
 }
 
 impl<T> Stack<T> {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             head: AtomicPtr::new(std::ptr::null_mut())
         }
     }
 
-    fn push(&self, value: T) {
+    pub fn push(&self, value: T) {
         let mut current_head = self.head.load(Ordering::Relaxed);
         let node = Box::new(Node::new(value));
         let new_head = Box::into_raw(node);
+        println!("[push] allocated new node at {:#x}",  new_head as usize);
 
         loop {
             unsafe { (*new_head).next  = current_head };
@@ -41,8 +42,12 @@ impl<T> Stack<T> {
                 Ordering::AcqRel, 
                 Ordering::Relaxed
             ) {
-                Ok(_) => break,
+                Ok(_) => {
+                    println!("[push] CAS success: head {:#x} -> {:#x}",  current_head as usize, new_head as usize);
+                    break;
+                },
                 Err(actual_head) => {
+                    println!("[push] CAS failure: expected {}, actual {}", current_head as usize, actual_head as usize);
                     current_head = actual_head;
                 },
             }
@@ -65,12 +70,14 @@ impl<T> Stack<T> {
 
             // Safety: how do we know no other read is modifying this?
             let new_head = unsafe { (*current_head).next };
+            println!("[pop] read head {:#x}, next: {:#x}", current_head as usize, new_head as usize);
 
             // Artificially added delay to trigger ABA
             if inject_delay {
                 thread::sleep(Duration::from_millis(100));
             }
 
+            //println!("trying CAS in push: current_head {:#x}, new_head {:#x}", current_head as usize, new_head as usize);
             match self.head.compare_exchange_weak(
                 current_head,
                 new_head, 
@@ -80,11 +87,13 @@ impl<T> Stack<T> {
                 Ok(_) => {
                     // Safety: as I'm writing this, rusts forces me to think about the safety of the unsafe operations,
                     // and the fact that I can't write a safety statement should be a red flag
+                    println!("[pop] CAS success: head: {:#x} -> {:#x}", current_head as usize, new_head as usize);
                     let node = unsafe { Box::from_raw(current_head) };
 
                     return Some(node.value); // our ptr gets dropped as the Box goes out of scope
                 },
                 Err(actual_head) => {
+                    println!("[pop] CAS fail: expected {:#x}, actual_head {:#x}", current_head as usize, actual_head as usize);
                     current_head = actual_head;
                 }
             }
@@ -103,11 +112,13 @@ mod tests {
     use crate::Arc;
 
     #[test]
-    fn aba() {
+    fn test_aba() {
         let stack = Arc::new(Stack::<i32>::new());
         let stack_clone = stack.clone();
         stack.push(2);
         stack.push(1);
+        println!("---");
+        println!();
         // stack at this point: head -> [1] -> [2] -> nullptr
 
         thread::scope(|s| {
@@ -123,7 +134,9 @@ mod tests {
 
                 // If this pop shows up as [3] this means the CAS succeeded,
                 // and we were able to reproduce the bug, yay!
-                println!("thread 1 pop: {:?}", node);
+                println!("thread 1 continues pop: {:?}", node);
+                println!("---");
+                println!();
             });
 
             // During the first thread's delay window:
@@ -134,13 +147,23 @@ mod tests {
                 // We wait a little to make sure the first thread gets a head (no pun intended) start
                 thread::sleep(Duration::from_millis(20));
 
+                println!();
+                println!("---");
                 println!("thread 2 pops: [{}]", stack_clone.pop().unwrap());
+                println!("---");
+                println!();
                 println!("thread 2 pops: [{}]", stack_clone.pop().unwrap());
+                println!("---");
+                println!();
+                let tmp_raw = Box::into_raw(Box::new(Node::new(43)));
+                println!("tmp node created at {:#x}", tmp_raw as usize);
 
                 // Let's hope the system heap allocator reuses the memory that was just freed
                 // Stack now: head -> [3] -> nullptr
-                stack_clone.push(3);
                 println!("thread 2 pushes [3]");
+                stack_clone.push(3);
+                println!("---");
+                println!();
             });
 
             thread::sleep(Duration::from_millis(500));
@@ -150,7 +173,7 @@ mod tests {
     }
     
     #[test]
-    fn basic_multithreading() {
+    fn test_basic_multithreading() {
         let stack = Arc::new(Stack::<i32>::new());
         let stack_clone = stack.clone();
         stack.push(1);
@@ -171,7 +194,7 @@ mod tests {
     }
 
     #[test]
-    fn basic() {
+    fn test_basic() {
         let stack = Stack::<i32>::new();
         stack.push(10);
         stack.push(15);
@@ -186,7 +209,7 @@ mod tests {
     }
 
     #[test]
-    fn sequencial() {
+    fn test_sequencial() {
         let stack = Stack::<i32>::new();
         stack.push(10);
         assert_eq!(stack.pop(), Some(10));

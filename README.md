@@ -33,8 +33,15 @@ src/
 
 ### Running Tests
 
+All of them:
+
 ```
 cargo test
+```
+
+Run a specific test, without capturing output:
+```
+cargo test test_aba --lib -- --nocapture  
 ```
 
 #### Loom
